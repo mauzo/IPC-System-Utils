@@ -7,9 +7,11 @@ our $VERSION = 0.01;
 
 require Exporter;
 our @ISA = qw/Exporter/;
-our @EXPORT_OK = qw/quote_arg quote_cmd system_err system_redir/;
+our @EXPORT_OK = qw/quote_arg quote_cmd redir_std/;
 
 use File::Spec;
+use File::Temp  qw/tempfile/;
+use Fcntl       qw/SEEK_SET/;
 
 # taken from MakeMaker
 sub _is_win95 {
@@ -65,6 +67,55 @@ sub quote_cmd {
         join " ",
         map { ref() ? $$_ : quote_arg }
         @cmd;
+}
+
+sub redir_std (&@) {
+    my ($cb, $stdin) = @_;
+
+    my @STD = (\*STDIN, \*STDOUT, \*STDERR);
+    my (@OLD, @NEW);
+
+    $NEW[$_] = tempfile for 1..2;
+
+    if (defined $stdin) {
+        $NEW[0] = tempfile;
+        print { $NEW[0] } $stdin;
+        seek $NEW[0], 0, SEEK_SET;
+    }
+    else {
+        open $NEW[0], "<", File::Spec->devnull
+            or die "can't open null device: $!\n";
+    }
+
+    for (0..2) {
+        my $dir = $_ ? ">" : "<";
+        open $OLD[$_], "$dir&", $STD[$_];
+        open $STD[$_], "$dir&", $NEW[$_];
+    }
+
+    my (@warn, $die, $rv);
+    {
+        local $SIG{__WARN__} = sub { push @warn, $_[0] };
+
+        eval { $cb->() };
+        $die = $@;
+    }
+
+    for (0..2) {
+        my $dir = $_ ? ">" : "<";
+        open $STD[$_], "$dir&", $OLD[$_];
+    }
+
+    warn $_ for @warn;
+    $die and die "$die\n";
+
+    my ($stdout, $stderr) = map {
+        seek $NEW[$_], 0, SEEK_SET;
+        local $/ = undef;
+        readline $NEW[$_];
+    } 1..2;
+
+    return wantarray ? ($stdout, $stderr) : $rv;
 }
 
 1;
