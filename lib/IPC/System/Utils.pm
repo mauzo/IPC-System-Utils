@@ -14,12 +14,6 @@ use File::Temp  qw/tempfile/;
 use Fcntl       qw/SEEK_SET/;
 
 # taken from MakeMaker
-sub _is_win95 {
-    return defined &Win32::IsWin95
-        ? Win32::IsWin95()
-        : ! defined $ENV{SYSTEMROOT};
-}
-
 BEGIN {
     if ($^O eq "VMS") {
         *quote_arg = sub {
